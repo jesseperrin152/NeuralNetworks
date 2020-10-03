@@ -1,0 +1,205 @@
+"""
+Artificial Neural Network Development
+
+Task: 
+    You have been tasked by a bank to determine the likelihood of a customer
+    leaving. Develop an artificial neural network for predicting whether or not a
+    customer will stay with the bank. You are competing with other coders on this 
+    task to see who can develop the best decision making model for the bank. 
+    You can use as many layers as you would like. However, be mindful of the 
+    processing power of your own computer systems. 
+    
+    In order to ensure you are able to trust the model you create, we seek an 
+    ANN design with at least 80% accuracy and a low computational time. 
+    
+    Goal: 
+        To create a model that has a better accuracy and computation time
+        than your competitors.
+    Some questions to help you along with the task: 
+        How many layers will you use? 
+        What activation functions will you use in each layer?
+        How many epochs?
+        
+            
+You are to add your layers to the "Your layers here" section on line 68.
+
+Hints for model improvement: Focus on the architecture, parameters, or both
+"""
+# Part 1 - Data Prepocessing
+
+# Importing the libraries
+import numpy as np 
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.model_selection import train_test_split # Can replace cross_validation with model_selection due to update
+from sklearn.preprocessing import StandardScaler
+from keras.models import Sequential
+from keras.layers import Dense
+from sklearn.metrics import confusion_matrix
+
+# Importing the dataset
+dataset = pd.read_csv('Churn_Modeling.csv')
+X = dataset.iloc[:, 3:13].values
+y = dataset.iloc[:,13].values
+
+# Ecoding categorical data
+labelencoder_X_1 = LabelEncoder()
+X[:,1] = labelencoder_X_1.fit_transform(X[:,1])
+labelencoder_X_2 = LabelEncoder()
+X[:,2] = labelencoder_X_2.fit_transform(X[:,2])
+onehotencoder = OneHotEncoder(categorical_features=[1])
+X = onehotencoder.fit_transform(X).toarray()
+X = X[:, 1:] # Avoid dummy variable trap
+
+
+# Splitting the dataset into Training set and Test set
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 0)
+
+# Feature Scaling
+sc = StandardScaler()
+X_train = sc.fit_transform(X_train)
+X_test = sc.transform(X_test)
+
+# Part 2 -Construct the ANN!
+
+# Initializing the ANN
+classifier = Sequential()
+
+### Your layers here ###
+
+# Compiling the ANN
+classifier.compile(optimizer = 'adam', loss = 'binary_crossentropy', metrics = ['accuracy'])
+
+# Fitting the ANN to the Training set
+classifier.fit(X_train, y_train, batch_size = 10, epochs = 100)
+
+# Part 3 - Making the predictions and evaluating the model
+
+# Predicting the Test set results
+y_pred = classifier.predict(X_test)
+y_pred = (y_pred > 0.5)
+
+# Predicting new observations
+"""When you have achieved a desirable accuracy, apply your model to the 
+    folloing customers to determine if they will leave the bank:
+        Customer 1:
+            Geography: France
+            Credit Score: 540
+            Gender: Male
+            Age: 50
+            Tenure: 4
+            Balance: 10500
+            Number of Products: 2
+            Has Credit Card: No
+            Is Active Member: Yes
+            Estimated Salary: 50000
+        Customer 2:
+            Geography: Spain
+            Credit Score: 700
+            Gender: Female
+            Age: 25
+            Tenure: 8
+            Balance: 250000
+            Number of Products: 4
+            Has Credit Card: Yes
+            Is Active Member: Yes
+            Estimated Salary: 125000
+        Customer 3:
+            Geography: Germany
+            Credit Score: 325
+            Gender: Male
+            Age: 60
+            Tenure: 3
+            Balance: 20000
+            Number of Products: 3
+            Has Credit Card: No
+            Is Active Member: No
+            Estimated Salary: 30000
+            
+            Example:
+                 Geography: France
+                 Credit Score: 600
+                 Gender: Male
+                 Age: 40
+                 Tenure: 3
+                 Balance: 60000
+                 Number of Products: 2
+                 Has Credit Card: Yes
+                 Is Active Member: Yes
+                 Estimated Salary: 50000
+    """
+    
+new_customer = sc.transform(np.array([[0.0, 0, 600, 1, 40, 3, 60000, 2, 1, 1, 50000]]))    
+new_prediction = classifier.predict(new_customer)
+new_prediction = (new_prediction > 0.5) 
+# If the predicted probability of the new customer leaving is greater than 0.5 
+# the value of your new prediction will be True, meaning the customer is 
+# expected to leave the bank. If the value is less than 0.5, then the value
+# of the new prediction will be False, which means the customer is not 
+# expected to leave.  
+
+
+# Making the Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+
+# Part 4 - Accuracy and Time computation 
+# Compute the overall accuracy of your model
+overall_accuracy = (cm[0,0] + cm[1,1])/cm.sum()
+overall_accuracy = round(overall_accuracy,4)
+print("The overall accuracy of the ANN Model is {}%".format(100*overall_accuracy))
+
+# Computational time can be computed using the timeit module as follows if needed:
+ANN_Model = """
+# Importing the libraries
+import numpy as np 
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.model_selection import train_test_split # Can replace cross_validation with model_selection due to update
+from sklearn.preprocessing import StandardScaler
+from keras.models import Sequential
+from keras.layers import Dense
+from sklearn.metrics import confusion_matrix
+
+# Importing the dataset
+dataset = pd.read_csv('Churn_Modelling.csv')
+X = dataset.iloc[:, 3:13].values
+y = dataset.iloc[:,13].values
+
+# Ecoding categorical data
+labelencoder_X_1 = LabelEncoder()
+X[:,1] = labelencoder_X_1.fit_transform(X[:,1])
+labelencoder_X_2 = LabelEncoder()
+X[:,2] = labelencoder_X_2.fit_transform(X[:,2])
+onehotencoder = OneHotEncoder(categorical_features=[1])
+X = onehotencoder.fit_transform(X).toarray()
+X = X[:, 1:] # Avoid dummy variable trap
+
+
+# Splitting the dataset into Training set and Test set
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 0)
+
+# Feature Scaling
+sc = StandardScaler()
+X_train = sc.fit_transform(X_train)
+X_test = sc.transform(X_test)
+
+# Part 2 - Now let's make the ANN!
+
+
+# Initializing the ANN
+
+
+classifier = Sequential()
+
+# Your layers here
+
+# Fitting the ANN to the Training set
+classifier.fit(X_train, y_train, batch_size = 10, epochs = 100)
+"""
+import timeit
+model_timer = timeit.timeit(stmt=ANN_Model, number = 1)
+model_minutes = round(model_timer.real/60,2)
+print("ANN Model completes single run in approximately {} minutes".format(model_minutes))
+
+
