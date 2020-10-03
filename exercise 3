@@ -1,0 +1,244 @@
+'''
+Modulation Recognition with Deep Artificial Neural Networks
+Digital Modulation
+Warning: Those that attempt to run this code using a CPU should
+expect a signficant wait time for the model to learn. 
+'''
+# Import all the things we need ---
+#   by setting env variables before Keras import you can set up which backend and which GPU it uses
+import os,sys,random
+os.environ["KERAS_BACKEND"] = "tensorflow"
+import numpy as np
+import tensorflow as T
+from keras.utils import np_utils
+from keras.models import Sequential, load_model
+from keras.layers.core import Reshape,Dense,Dropout,Activation,Flatten
+from keras.layers.normalization import BatchNormalization
+from keras.layers.noise import GaussianNoise
+from keras.layers.convolutional import Conv2D, MaxPooling2D, ZeroPadding2D
+from keras.regularizers import *
+from keras.optimizers import *
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pickle as cPickle
+import keras
+from glob import glob
+
+# Import filepath for data
+data_dir = os.path.join('C:\+CSCoRE','*')
+rfs_path = glob(os.path.join(data_dir,'*','*.dat'))
+
+# Load the dataset
+#  You will need to seperately download or generate this file
+Xd = cPickle.load(open(rfs_path[0],'rb'),encoding="latin1")
+snrs,mods = map(lambda j: sorted(list(set(map(lambda x: x[j], Xd.keys())))), [1,0])
+X = []  
+lbl = []
+digital_mods = ['BPSK', 'QPSK', '8PSK', 'QAM16', 'QAM64', 'CPFSK','PAM4','GFSK']
+# Update to only use 0 and positive snr values
+for mod in digital_mods: 
+    for snr in [0,2,4,6,8,10,12,14,16,18]:
+        X.append(Xd[(mod,snr)])
+        for i in range(Xd[(mod,snr)].shape[0]): lbl.append((mod,snr))
+X = np.vstack(X)
+
+
+# Partition the data
+#  into training and test sets of the form we can train/test on 
+#  while keeping SNR and Mod labels handy for each
+np.random.seed(2018)
+n_examples = X.shape[0]
+n_train = int(n_examples * 0.8)
+train_idx = np.random.choice(range(0,n_examples), size=n_train, replace=False)
+test_idx = list(set(range(0,n_examples))-set(train_idx))
+X_train = X[train_idx]
+X_test =  X[test_idx]
+def to_onehot(yy):
+    yy = list(yy)
+    yy1 = np.zeros([len(yy), max(yy)+1])
+    yy1[np.arange(len(yy)),yy] = 1
+    return yy1
+Y_train = list(map(lambda x: digital_mods.index(lbl[x][0]), train_idx))
+Y_test = list(map(lambda x: digital_mods.index(lbl[x][0]), test_idx))    
+
+in_shp = list(X_train.shape[1:])
+print(X_train.shape, in_shp)
+classes = digital_mods
+
+'''
+Evaluating the ANN Model
+'''
+
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import cross_val_score
+from keras.models import Sequential
+from keras.layers import Dense
+
+from keras.layers import Dropout
+
+# Parameter Tuning the ANN
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import GridSearchCV
+from keras.models import Sequential
+from keras.layers import Dense
+
+def ANN(nodes,nodes2, nodes3, 
+        act_func, optimizer,
+        weights, weights2, weights3,
+        o_weights):
+    # Initialize ANN
+    digital_classifier = Sequential()
+    digital_classifier.add(BatchNormalization(input_shape=in_shp))
+    digital_classifier.add(Flatten())
+    # Stack Dense Layers with Dropout
+    digital_classifier.add(Dense(nodes,kernel_initializer=weights, 
+        activation=act_func
+        ))
+    digital_classifier.add(Dropout(0.6))
+    digital_classifier.add(Dense(nodes2,kernel_initializer=weights2, 
+        activation=act_func
+        ))
+    digital_classifier.add(Dropout(0.6))
+    digital_classifier.add(Dense(nodes3,kernel_initializer=weights3, 
+        activation=act_func
+           ))
+    digital_classifier.add(Dropout(0.6))
+    # Output Layer
+    digital_classifier.add(Dense( len(classes), kernel_initializer=o_weights, name="dense4" ))
+    digital_classifier.add(Activation('softmax'))
+    # Compliing the ANN
+    digital_classifier.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics = ['accuracy'])
+    return digital_classifier
+
+classifier = KerasClassifier(build_fn = ANN)
+
+parameters = {
+    'nodes' : [750],
+    'nodes2': [750],
+    'nodes3': [500],
+    'act_func':['relu'],
+    'weights':['lecun_uniform'],
+    'weights2':['lecun_uniform'],
+    'weights3':['lecun_uniform'],
+    'o_weights':['lecun_normal'],
+    'epochs' : [150],
+    'batch_size' : [1024],
+    'optimizer': ['adagrad']
+}
+
+# Changed cv = 2, but can cross validate at cv = 10
+# Expect minimum one hour run time with current parameters if changed to cv = 10
+grid_search = GridSearchCV(estimator = classifier,
+                           param_grid = parameters,
+                           scoring = 'accuracy',
+                           cv = 5)
+filepath = 'ann_digital_cv_1.h5' 
+grid_search = grid_search.fit(X_train,Y_train,
+                              validation_data=(X_test, Y_test),
+                              callbacks = [
+                                      keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', verbose=0, save_best_only=True, mode='auto'),
+                                      keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=0, mode='auto')
+                                      ])
+
+# Store parameters and accuracy score of "best" model
+best_parameters = grid_search.best_params_
+best_accuracy = grid_search.best_score_
+
+# View parameters and accuracy of "best" model
+print(best_parameters)
+print(best_accuracy)
+
+# Load in Cross-Validated Model 
+new_model = load_model('ann_digital_cv_1.h5')
+new_model.summary()
+
+
+# Fit with "best" cross validated model
+filepath = 'ann_digital_cv_pos_snr.h5'
+''' EarlyStopping'''
+history = grid_search.best_estimator_.fit(X_train, Y_train,
+                                          verbose=2,
+                                          validation_data=(X_test, Y_test),
+                                          callbacks = [
+                                                  keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', verbose=0, save_best_only=True, mode='auto'),
+                                                  keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, verbose=0, mode='auto')
+                                                  ])
+
+# Load in Re-fitted Cross-Validated Model 
+new_model = load_model('ann_digital_cv_pos_snr.h5')
+new_model.summary()
+
+#we re-load the best weights once training is finished
+new_model.load_weights(filepath)
+ 
+# Evaluating the CNN
+# Show simple version of performance
+score = new_model.evaluate(X_test, Y_test, verbose=0, batch_size=1024)
+print(score)
+ 
+# Show loss curves 
+plt.figure()
+plt.title('Training performance')
+plt.plot(history.epoch, history.history['loss'], label='train loss+error')
+plt.plot(history.epoch, history.history['val_loss'], label='val_error')
+plt.legend()
+plt.show()
+ 
+#=============================================================================
+'''
+Plot Confusion Matrix 
+'''
+def plot_confusion_matrix(cm, title='', cmap=plt.cm.Blues, labels=[]):
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(labels))
+    plt.xticks(tick_marks, labels, rotation=45)
+    plt.yticks(tick_marks, labels)
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    
+# Plot confusion matrix
+test_Y_hat = new_model.predict(X_test, batch_size=1024)
+conf = np.zeros([len(classes),len(classes)])
+confnorm = np.zeros([len(classes),len(classes)])
+for i in range(0,X_test.shape[0]):
+    j = list(Y_test[i,:]).index(1)
+    k = int(np.argmax(test_Y_hat[i,:]))
+    conf[j,k] = conf[j,k] + 1
+for i in range(0,len(classes)):
+    confnorm[i,:] = conf[i,:] / np.sum(conf[i,:])
+plot_confusion_matrix(confnorm, labels=classes)
+
+# Plot confusion matrix for each SNR
+acc = {}
+for snr in snrs:
+    
+        # extract classes @ SNR
+        test_SNRs = list(map(lambda x: lbl[x][1], test_idx))
+        test_X_i = X_test[np.where(np.array(test_SNRs)==snr)]
+        test_Y_i = Y_test[np.where(np.array(test_SNRs)==snr)]    
+    
+        # estimate classes
+        test_Y_i_hat = new_model.predict(test_X_i)
+        conf = np.zeros([len(classes),len(classes)])
+        confnorm = np.zeros([len(classes),len(classes)])
+        for i in range(0,test_X_i.shape[0]):
+            j = list(test_Y_i[i,:]).index(1)
+            k = int(np.argmax(test_Y_i_hat[i,:]))
+            conf[j,k] = conf[j,k] + 1
+        for i in range(0,len(classes)):
+            confnorm[i,:] = conf[i,:] / np.sum(conf[i,:])
+        plot_confusion_matrix(confnorm, labels=classes, title="ConvNet Confusion Matrix (SNR=%d)"%(snr))
+        
+        cor = np.sum(np.diag(conf))
+        ncor = np.sum(conf) - cor
+        print("Overall Accuracy (SNR=%d): "%(snr), cor / (cor+ncor))
+        acc[snr] = 1.0*cor/(cor+ncor)
+
+# Plot accuracy curve
+plt.plot(snrs, list(map(lambda x: acc[x], snrs)))
+plt.xlabel("Signal to Noise Ratio")
+plt.ylabel("Classification Accuracy")
+plt.title("ANN Classification Accuracy on RadioML 2016.10 Alpha")
